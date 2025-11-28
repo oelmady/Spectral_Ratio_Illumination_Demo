@@ -22,7 +22,11 @@ def parse_args():
     parser.add_argument('--checkpoint', type=str, default='model/UNET_run_x10_01_last_model.pth')
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--image', type=str, default=None, help='Process a single image name (stem only)')
+    parser.add_argument('--retinex', action='store_true', help='Run spectral-ratio constrained Retinex and save corrected image')
+    parser.add_argument('--sr-correct', action='store_true', help='Apply spectral-ratio color correction (simple shift)')
+    parser.add_argument('--distance', type=float, default=1.0, help='Distance in log-space for sr-correct')
     return parser.parse_args()
+from algorithms.retinex import spectral_ratio_retinex, apply_spectral_ratio_color_correction
 
 
 def main():
@@ -88,6 +92,23 @@ def main():
         img_out = out_dir / f"{stem}_image_8bit.png"
         cv2.imwrite(str(img_out), img8_bgr)
         print(f"Saved: {img_out}")
+
+        # Optional: run spectral-ratio constrained Retinex
+        if args.retinex:
+            corrected, illum = spectral_ratio_retinex(image, out_map, iterations=5, sigma=15, anchor=None)
+            # Save corrected as 16-bit (scale back)
+            corr_u16 = np.clip(corrected, 0, 65535).astype(np.uint16)
+            corr_out = out_dir / f"{stem}_retinex_corrected.tiff"
+            cv2.imwrite(str(corr_out), corr_u16)
+            print(f"Saved Retinex corrected: {corr_out}")
+
+        # Optional: simple spectral-ratio color correction (shift along SR)
+        if args.sr_correct:
+            corrected2 = apply_spectral_ratio_color_correction(image, out_map, distance=args.distance)
+            corr2_u16 = np.clip(corrected2, 0, 65535).astype(np.uint16)
+            corr2_out = out_dir / f"{stem}_sr_shifted.tiff"
+            cv2.imwrite(str(corr2_out), corr2_u16)
+            print(f"Saved SR-shifted image: {corr2_out}")
 
 
 if __name__ == '__main__':
