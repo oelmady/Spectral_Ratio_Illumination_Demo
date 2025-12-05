@@ -1,4 +1,4 @@
 # gitignore
 
 *.pth
-.venv/
+.venv/Miniforge3-MacOSX-x86_64.sh
