@@ -1,26 +1,56 @@
-# Remote Server Setup Guide
+# Remote Server Setup Guide: Northeastern Explorer HPC
 
-Step-by-step instructions to deploy and run your project on the remote server.
+Step-by-step instructions to deploy and run your project on Northeastern's Explorer HPC cluster.
 
 ## Phase 1: Initial Connection & Project Setup
 
-### Step 1.1: SSH into the Remote Server
+### Step 1.1: SSH into Explorer Cluster
 ```bash
-ssh username@remote.server.address
-# Or if your professor provides a specific command, use that
+ssh your_northeastern_username@login.explorer.northeastern.edu
 ```
 
 **What to expect:**
-- You'll be prompted for a password (ask professor if needed)
-- You should see a terminal prompt like `username@server:~$`
+- You'll be prompted for your Northeastern password
+- After entering it, you should see the Explorer welcome banner with the Explorer ASCII art
+- Terminal prompt should look like: `[your_username@explorer-XX ~]$`
 
-### Step 1.2: Verify Python is Available
+### Step 1.2: Verify Python and Load Modules
 ```bash
+# First, see what modules are available on the cluster
+module avail python
+
+# Load a Python module (typically 3.10 or higher)
+module load python/3.11  # or whichever version is available
+
+# Verify it worked
 python3 --version
-# Expected output: Python 3.8+ (ideally 3.10 or higher)
 ```
 
-If Python isn't available, ask your professor to install it or use their existing Python environment.
+**What to expect:**
+- `module avail python` shows available Python versions
+- Load the newest Python version you see listed
+- `python3 --version` should return Python 3.10+ (not 2.7)
+
+### Step 1.2b (Optional): Set Up Passwordless SSH
+This is convenient so you don't have to type your password every time. **Perform these steps once.**
+
+**On your LOCAL Mac (not connected to cluster):**
+```bash
+# Generate SSH keys (if you don't have them already)
+cd ~/.ssh
+ssh-keygen -t rsa
+# Press Enter on all prompts, don't set a passphrase
+
+# Copy keys to Explorer cluster
+ssh-copy-id -i ~/.ssh/id_rsa.pub your_northeastern_username@login.explorer.northeastern.edu
+# Enter your NU password when prompted
+
+# Test passwordless login
+ssh your_northeastern_username@login.explorer.northeastern.edu
+# Should connect WITHOUT asking for password
+```
+
+Now future logins won't require a password.
 
 ### Step 1.3: Clone Your Project Repository
 ```bash
@@ -56,10 +86,29 @@ If git-lfs is NOT installed on the server, ask your professor to install it, or 
 
 ## Phase 2: Environment Setup
 
-### Step 2.1: Set Up Python Virtual Environment (Recommended Approach)
-This isolates your project dependencies from system Python.
+### Step 2.1: Load Required Modules on Explorer
+HPC clusters use "modules" to manage software environments. Do this every time you log in.
 
 ```bash
+# Load Python (3.11 or latest available)
+module load python/3.11
+
+# Load libraries needed for PyTorch and OpenCV
+module load gcc  # C++ compiler
+module load cuda  # Optional: if you want GPU support
+
+# Verify modules loaded
+module list
+```
+
+**What to expect:**
+- `module list` shows `python/3.11`, `gcc`, and optionally `cuda`
+
+### Step 2.2: Create Python Virtual Environment
+```bash
+# Navigate to your project
+cd ~/Spectral_Ratio_Illumination_Demo
+
 # Create a virtual environment
 python3 -m venv venv
 
@@ -67,21 +116,17 @@ python3 -m venv venv
 source venv/bin/activate
 # You should see (venv) in your terminal prompt
 
-# Upgrade pip to latest version
+# Upgrade pip
 pip install --upgrade pip
 ```
 
-**Alternative: Use Conda (If Available)**
-If the server has conda, you can use it instead:
-```bash
-conda create -n spectral python=3.11
-conda activate spectral
-```
+**Note:** You'll need to do `source venv/bin/activate` and load modules every time you connect to the cluster.
 
-### Step 2.2: Install Project Dependencies
+### Step 2.3: Install Project Dependencies
 ```bash
-# Make sure you're in the project directory
+# Make sure you're in the project directory with venv activated
 cd ~/Spectral_Ratio_Illumination_Demo
+source venv/bin/activate
 
 # Install all required packages
 pip install -r requirements.txt
@@ -90,10 +135,11 @@ pip install -r requirements.txt
 ```
 
 **What to expect:**
-- Installation may take 2-5 minutes (downloading PyTorch is ~500MB)
+- Installation may take 3-10 minutes (PyTorch is large)
 - You should see `Successfully installed` messages for each package
+- On HPC, pip may need to compile some packages; this is normal
 
-### Step 2.3: Verify Installation
+### Step 2.4: Verify Installation
 ```bash
 # Test that all imports work
 python preflight_check.py
@@ -114,13 +160,30 @@ STATUS: READY FOR EXPERIMENTS
 ========================================
 ```
 
-If any checks fail, refer to the troubleshooting section at the end of this guide.
+If any checks fail, see troubleshooting section at the end.
 
 ---
 
 ## Phase 3: Running Experiments
 
-### Step 3.1: Prepare Input Data
+### Step 3.1: Prepare Environment for Each Session
+Every time you connect to Explorer, run these commands:
+
+```bash
+# SSH to cluster
+ssh your_northeastern_username@login.explorer.northeastern.edu
+
+# Load modules
+module load python/3.11 gcc
+
+# Navigate to project
+cd ~/Spectral_Ratio_Illumination_Demo
+
+# Activate virtual environment
+source venv/bin/activate
+```
+
+### Step 3.2: Prepare Input Data
 Your input images should be 16-bit linear RGB TIFF files in `data/images/`:
 
 ```bash
@@ -129,15 +192,15 @@ ls -la data/images/
 
 # If you need to upload images from your local machine:
 # On your LOCAL Mac (in a separate terminal):
-# scp /path/to/your/image.tif username@remote.server.address:~/Spectral_Ratio_Illumination_Demo/data/images/
+# scp /path/to/your/image.tif your_northeastern_username@login.explorer.northeastern.edu:~/Spectral_Ratio_Illumination_Demo/data/images/
 ```
 
-### Step 3.2: Run the Batch Processor
-This runs the ISD model and all Retinex variations on all images:
+### Step 3.3: Run the Batch Processor (Interactive)
+For testing and small runs (5-10 images), run interactively:
 
 ```bash
-# Make sure venv is activated
-source venv/bin/activate  # or: conda activate spectral
+# Make sure venv is activated and modules loaded
+source venv/bin/activate
 
 # Run the batch processor
 python scripts/run_batch.py \
@@ -150,82 +213,97 @@ python scripts/run_batch.py \
   --distance 1.0
 ```
 
-**What this does:**
-- Processes all images in `data/images/`
-- Runs the neural network ISD predictor on each
-- Applies baseline Retinex for comparison
-- Applies SR-constrained Retinex
-- Applies SR-based color correction
-- Writes outputs to `results/` (maps as TIFF, visualizations as PNG)
-
 **Expected runtime:**
-- Model inference: ~30 seconds per image (CPU)
+- Model inference: ~30 seconds per image (CPU on login node)
 - Retinex algorithms: ~5-10 seconds per image
-- Total for 10 images: ~5-10 minutes
+- Total for 5 images: ~3-5 minutes
 
-### Step 3.3: Download Results Back to Your Mac
-Once experiments complete, retrieve the results:
+### Step 3.4: Run Large Experiments (Optional: Batch Job Submission)
+For processing many images or parameter sweeps, submit a job to the scheduler instead of running on login nodes.
 
+**Create a file `run_experiment.sh`:**
 ```bash
-# On your REMOTE terminal, create a tar archive of results
-tar -czf results.tar.gz results/
+#!/bin/bash
+#SBATCH --job-name=spectral_retinex
+#SBATCH --time=02:00:00          # 2 hour time limit
+#SBATCH --nodes=1
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=4        # Use 4 CPU cores
+#SBATCH --mem=16gb               # Request 16GB memory
 
-# On your LOCAL Mac (in a separate terminal):
-scp username@remote.server.address:~/Spectral_Ratio_Illumination_Demo/results.tar.gz ./
-tar -xzf results.tar.gz
-# Results now in ./results/ locally
+# Load modules
+module load python/3.11 gcc
+
+# Activate environment
+source venv/bin/activate
+
+# Run experiments
+python scripts/run_batch.py \
+  --use-model \
+  --retinex \
+  --baseline-retinex \
+  --sr-correct \
+  --iterations 5 \
+  --sigma 15
 ```
 
-### Step 3.4: Parameter Tuning (Optional)
-For systematic parameter exploration, follow the guide in `TUNING_GUIDE.md`:
-
+Submit the job:
 ```bash
-# Example: Test different sigma values
-for SIGMA in 10 15 20 25 30; do
-  echo "Running with sigma=$SIGMA"
-  python scripts/run_batch.py \
-    --use-model \
-    --retinex \
-    --baseline-retinex \
-    --iterations 5 \
-    --sigma $SIGMA
-done
+sbatch run_experiment.sh
 ```
+
+Check job status:
+```bash
+squeue -u your_username
+```
+
+This allows long-running experiments without blocking the login node.
 
 ---
 
 ## Phase 4: Troubleshooting
 
-### Issue: `git lfs pull` returns empty or small file
-**Cause:** git-lfs not installed on server
-**Solution:** 
+### Issue: `module load python/3.11` says module not found
+**Cause:** Different Python versions available on your cluster
+**Solution:**
 ```bash
-# Ask your professor to run:
-sudo apt-get install git-lfs  # Linux
-# or
-brew install git-lfs  # macOS
-# Then retry: git lfs pull --include="model/UNET_run_x10_01_last_model.pth"
+# Check available versions
+module avail python
+
+# Load a different version (e.g., 3.10, 3.12)
+module load python/3.10
+```
+
+### Issue: `git lfs pull` returns empty or small file (after clone)
+**Cause:** git-lfs may not be installed on cluster
+**Solution:**
+```bash
+# Check if it's installed
+git lfs version
+
+# If not, ask RC to install it, or email rchelp@northeastern.edu
+# Note: git lfs should already be installed on Explorer
 ```
 
 ### Issue: `ModuleNotFoundError: No module named 'torch'`
-**Cause:** Dependencies not installed
+**Cause:** Dependencies not installed or venv not activated
 **Solution:**
 ```bash
+# Make sure modules are loaded
+module load python/3.11 gcc
+
 # Make sure venv is activated (you should see (venv) in prompt)
 source venv/bin/activate
+
 # Reinstall
 pip install -r requirements.txt
 ```
 
-### Issue: `CUDA out of memory` or extremely slow inference
-**Cause:** GPU not available or model trying to use it
-**Solution:** Model defaults to CPU (safe for all systems). If slow, try:
-```bash
-# Reduce batch size if batch processing hangs
-python scripts/run_batch.py --use-model --batch 1  # Process one image at a time
-```
+### Issue: `pip install` is very slow or times out
+**Cause:** Network bandwidth on login nodes is limited
+**Solution:** Use a batch job (SBATCH) instead of running on login nodes. See Step 3.4.
 
-### Issue: `Permission denied` when writing to `results/`
+### Issue: `PermissionError: [Errno 13] Permission denied: 'results/'`
 **Cause:** Directory doesn't exist or wrong permissions
 **Solution:**
 ```bash
@@ -233,69 +311,84 @@ mkdir -p results/
 chmod 755 results/
 ```
 
-### Issue: Images in `data/images/` not being processed
-**Cause:** Wrong file format or directory structure
-**Solution:**
-```bash
-# Verify directory structure
-ls -la data/images/
-# Should show .tif or .tiff files
-
-# Check file format
-file data/images/sample.tif
-# Should show "TIFF image data"
-```
+### Issue: Model inference is extremely slow (>2 minutes per image)
+**Cause:** Running on shared login node resources
+**Solution:** Submit as batch job (Step 3.4) to get dedicated CPU cores
 
 ---
 
-## Quick Reference: Essential Commands
+## Quick Reference: Session Checklist
 
-### Activation (run at start of each session)
+Every time you connect to Explorer:
+
 ```bash
-ssh username@remote.server.address
+# 1. SSH to cluster
+ssh your_northeastern_username@login.explorer.northeastern.edu
+
+# 2. Load modules
+module load python/3.11 gcc
+
+# 3. Navigate to project
 cd ~/Spectral_Ratio_Illumination_Demo
-source venv/bin/activate  # or: conda activate spectral
-```
 
-### Run Full Experiment
-```bash
+# 4. Activate venv
+source venv/bin/activate
+
+# 5. Run experiments
 python scripts/run_batch.py --use-model --retinex --baseline-retinex --sr-correct
+
+# 6. Download results (from LOCAL Mac terminal)
+# scp your_northeastern_username@login.explorer.northeastern.edu:~/Spectral_Ratio_Illumination_Demo/results.tar.gz ./
 ```
 
-### Check Progress
-```bash
-ls -la results/ | head -20
-```
+### Useful HPC Commands
 
-### Download Results
 ```bash
-# On remote:
-tar -czf results.tar.gz results/
+# See available modules
+module avail
 
-# On your Mac (local terminal):
-scp username@remote.server.address:~/Spectral_Ratio_Illumination_Demo/results.tar.gz ./
-```
+# See currently loaded modules
+module list
 
-### Deactivate Environment (when done)
-```bash
-deactivate  # or: conda deactivate
-logout  # Exit remote server
+# Unload a module
+module unload python/3.11
+
+# Submit a job
+sbatch run_experiment.sh
+
+# Check job status
+squeue -u your_username
+
+# Cancel a job
+scancel job_id
+
+# See past jobs
+sacct -u your_username
 ```
 
 ---
 
-## Contact Professor If:
-- git-lfs is not installed and you can't run `git lfs version`
-- Python 3.8+ is not available
-- You don't have write permissions to the project directory
-- Installation step 2.2 fails with permission errors
-- Model inference is extremely slow (>5 minutes per image) suggesting GPU issues
+## Important: Storage Locations on Explorer
+
+- **Home directory:** `~/` (10GB quota, backed up daily)
+- **Scratch space:** `/scratch` (temporary, no backup)
+- **Project space:** `/project` (if assigned, larger quota)
+
+Put your code in home (`~/Spectral_Ratio_Illumination_Demo`), but move large `results/` to scratch if storage becomes an issue.
+
+---
+
+## Contact If Issues:
+
+- **Python/module issues:** Email rchelp@northeastern.edu
+- **Git-lfs issues:** Email rchelp@northeastern.edu
+- **Code/algorithm issues:** Ask your professor
 
 ---
 
 ## Success Indicators
 ✓ `preflight_check.py` returns all green checks
 ✓ Model file is ~528MB (not 134 bytes)
-✓ `python scripts/run_batch.py --use-model` completes without errors
+✓ `python scripts/run_batch.py --use-model` completes without errors on login node
 ✓ `results/` directory contains TIFF and PNG files
 ✓ You can download results back to your Mac with `scp`
