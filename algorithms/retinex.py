@@ -2,6 +2,47 @@ import cv2
 import numpy as np
 
 
+def baseline_retinex(image, iterations=5, sigma=15, anchor=None):
+    """
+    Standard recursive Retinex algorithm (McCann-Sobel style).
+    
+    This is the baseline that preserves chromaticity - used for comparison
+    against the SR-constrained version.
+    
+    Parameters:
+    - image: uint16 RGB image (H,W,3)
+    - iterations: number of refinement iterations
+    - sigma: gaussian blur sigma for illumination estimation
+    - anchor: optional scalar log-illumination anchor
+    
+    Returns:
+    - corrected_linear: float32 linear RGB image
+    - illumination: final illumination estimate in log-space
+    """
+    # Convert to float32 log-space
+    log_img = np.zeros_like(image, dtype=np.float32)
+    mask = image > 0
+    log_img[mask] = np.log(image[mask])
+    
+    # Initialize illumination with Gaussian blur
+    I = _gaussian_blur_per_channel(log_img, sigma)
+    
+    # Iteratively refine illumination (standard Retinex - no SR constraint)
+    for _ in range(iterations):
+        I = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
+    
+    # Reflectance estimate
+    R = log_img - I
+    
+    if anchor is None:
+        anchor = float(np.percentile(I, 95))
+    
+    corrected_log = R + anchor
+    corrected_linear = np.exp(corrected_log).astype(np.float32)
+    
+    return corrected_linear, I
+
+
 def _gaussian_blur_per_channel(log_img, sigma):
     # kernel size from sigma
     ksize = max(3, int(6 * sigma + 1))

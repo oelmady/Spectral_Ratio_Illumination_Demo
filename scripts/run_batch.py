@@ -14,6 +14,7 @@ from pathlib import Path
 
 from model.unet_models2 import ResNet50UNet
 from run import ISDMapEstimator
+from algorithms.retinex import spectral_ratio_retinex, apply_spectral_ratio_color_correction, baseline_retinex
 
 
 def parse_args():
@@ -23,10 +24,12 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--image', type=str, default=None, help='Process a single image name (stem only)')
     parser.add_argument('--retinex', action='store_true', help='Run spectral-ratio constrained Retinex and save corrected image')
+    parser.add_argument('--baseline-retinex', action='store_true', help='Run baseline Retinex (no SR constraint) for comparison')
     parser.add_argument('--sr-correct', action='store_true', help='Apply spectral-ratio color correction (simple shift)')
     parser.add_argument('--distance', type=float, default=1.0, help='Distance in log-space for sr-correct')
+    parser.add_argument('--iterations', type=int, default=5, help='Number of Retinex iterations')
+    parser.add_argument('--sigma', type=float, default=15.0, help='Gaussian blur sigma for Retinex')
     return parser.parse_args()
-from algorithms.retinex import spectral_ratio_retinex, apply_spectral_ratio_color_correction
 
 
 def main():
@@ -95,12 +98,30 @@ def main():
 
         # Optional: run spectral-ratio constrained Retinex
         if args.retinex:
-            corrected, illum = spectral_ratio_retinex(image, out_map, iterations=5, sigma=15, anchor=None)
+            corrected, illum = spectral_ratio_retinex(image, out_map, iterations=args.iterations, sigma=args.sigma, anchor=None)
             # Save corrected as 16-bit (scale back)
             corr_u16 = np.clip(corrected, 0, 65535).astype(np.uint16)
-            corr_out = out_dir / f"{stem}_retinex_corrected.tiff"
+            corr_out = out_dir / f"{stem}_sr_retinex.tiff"
             cv2.imwrite(str(corr_out), corr_u16)
-            print(f"Saved Retinex corrected: {corr_out}")
+            print(f"Saved SR-Retinex corrected: {corr_out}")
+            
+            # Save 8-bit visualization
+            corr8 = (np.clip(corrected / 256.0, 0, 255)).astype(np.uint8)
+            corr8_bgr = cv2.cvtColor(corr8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_sr_retinex_vis.png"), corr8_bgr)
+
+        # Optional: run baseline Retinex (no SR constraint) for comparison
+        if args.baseline_retinex:
+            corrected_base, illum_base = baseline_retinex(image, iterations=args.iterations, sigma=args.sigma, anchor=None)
+            corr_base_u16 = np.clip(corrected_base, 0, 65535).astype(np.uint16)
+            corr_base_out = out_dir / f"{stem}_baseline_retinex.tiff"
+            cv2.imwrite(str(corr_base_out), corr_base_u16)
+            print(f"Saved Baseline Retinex: {corr_base_out}")
+            
+            # Save 8-bit visualization
+            corr_base8 = (np.clip(corrected_base / 256.0, 0, 255)).astype(np.uint8)
+            corr_base8_bgr = cv2.cvtColor(corr_base8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_baseline_retinex_vis.png"), corr_base8_bgr)
 
         # Optional: simple spectral-ratio color correction (shift along SR)
         if args.sr_correct:

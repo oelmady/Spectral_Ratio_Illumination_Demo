@@ -444,7 +444,7 @@ class ISDMapEstimator:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model checkpoint not found at: {model_path}")
         try:
-            checkpoint_data = torch.load(model_path, map_location=self.device)
+            checkpoint_data = torch.load(model_path, map_location=self.device, weights_only=False)
         except Exception as e:
             raise RuntimeError(f"Failed to load checkpoint from {model_path}: {e}")
 
