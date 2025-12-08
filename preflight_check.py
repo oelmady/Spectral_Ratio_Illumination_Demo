@@ -3,6 +3,9 @@
 Pre-flight check script to validate all components are ready for experiments.
 Run this after activating your environment to ensure everything works.
 """
+# Omar Elmady
+# Wednesday, Dec 11
+# CS 7180 
 import sys
 import importlib
 
