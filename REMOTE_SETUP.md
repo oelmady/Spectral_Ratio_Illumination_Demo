@@ -1,4 +1,9 @@
 # Remote Server Setup Guide: Northeastern Explorer HPC
+Omar Elmady 
+
+Wednesday, Dec 11
+
+CS 7180 
 
 Step-by-step instructions to deploy and run your project on Northeastern's Explorer HPC cluster.
 

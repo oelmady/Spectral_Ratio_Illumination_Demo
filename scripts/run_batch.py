@@ -1,3 +1,6 @@
+# Omar Elmady 
+# Wednesday, Dec 11
+# CS 7180 
 """
 Batch runner to produce ISD maps (predicted or annotated) and save visualizations to `results/`.
 

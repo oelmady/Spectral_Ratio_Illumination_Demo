@@ -1,3 +1,6 @@
+# Omar Elmady 
+# Wednesday, Dec 11
+# CS 7180 
 import cv2
 import numpy as np
 

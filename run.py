@@ -1,3 +1,6 @@
+# Omar Elmady 
+# Wednesday, Dec 11
+# CS 7180 
 """
 Script for visualizing application of ISD predictions vs gamma correction for shadow removal. 
 """
