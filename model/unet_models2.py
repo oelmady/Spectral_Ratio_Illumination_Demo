@@ -46,6 +46,11 @@ class UpBlock(nn.Module):
     def forward(self, x, skip):
         x = self.up(x)
         if skip is not None:
+            # Handle size mismatch between upsampled x and skip connection
+            diffY = skip.size()[2] - x.size()[2]
+            diffX = skip.size()[3] - x.size()[3]
+            x = F.pad(x, [diffX // 2, diffX - diffX // 2,
+                          diffY // 2, diffY - diffY // 2])
             x = torch.cat([x, skip], dim=1)
         x = self.conv(x)
         if self.se_block:
