@@ -507,12 +507,18 @@ class ISDMapEstimator:
         np.ndarray
             Normalized ISD map of shape (H, W, 3) in float32.
         """
+        orig_h, orig_w = image.shape[:2]
         input_tensor = self._preprocess_image(image)
 
         with torch.no_grad():
             output = self.model(input_tensor)
 
         output_np = output.squeeze(0).permute(1, 2, 0).cpu().numpy()
+        
+        # Resize output back to original dimensions if needed (due to padding in U-Net)
+        if output_np.shape[0] != orig_h or output_np.shape[1] != orig_w:
+            output_np = cv2.resize(output_np, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+        
         norm = np.linalg.norm(output_np, axis=2, keepdims=True).astype(np.float32)
         norm[norm == 0] = 1.0
         self.sr_map = output_np / norm
