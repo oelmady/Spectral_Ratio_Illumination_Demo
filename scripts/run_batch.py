@@ -324,8 +324,8 @@ def main():
         print("-"*70)
         
         # Compute averages per method
-        methods = ['sr_retinex', 'baseline_retinex', 'sr_color_correction']
-        method_names = ['SR-Constrained Retinex', 'Baseline Retinex', 'SR Color Correction']
+        methods = ['sr_retinex', 'baseline_retinex', 'sr_color_correction', 'gray_world', 'white_patch', 'multiscale_retinex']
+        method_names = ['SR-Constrained Retinex', 'Baseline Retinex', 'SR Color Correction', 'Gray World', 'White Patch', 'Multi-Scale Retinex']
         
         for method, name in zip(methods, method_names):
             color_errors = [m[method]['color_constancy_error_deg'] 
