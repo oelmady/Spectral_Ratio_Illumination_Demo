@@ -13,7 +13,9 @@ import os
 import cv2
 import numpy as np
 import argparse
+import json
 from pathlib import Path
+from skimage.metrics import structural_similarity as ssim
 
 from model.unet_models2 import ResNet50UNet
 from run import ISDMapEstimator
@@ -32,7 +34,50 @@ def parse_args():
     parser.add_argument('--distance', type=float, default=1.0, help='Distance in log-space for sr-correct')
     parser.add_argument('--iterations', type=int, default=5, help='Number of Retinex iterations')
     parser.add_argument('--sigma', type=float, default=15.0, help='Gaussian blur sigma for Retinex')
+    parser.add_argument('--compute-metrics', action='store_true', help='Compute quality metrics (SSIM, color constancy)')
     return parser.parse_args()
+
+
+def compute_color_constancy_error(original, corrected):
+    """
+    Compute color constancy error as angular error between mean colors.
+    Lower is better (colors are more stable).
+    """
+    # Convert to float and normalize
+    orig_float = original.astype(np.float32) / 65535.0
+    corr_float = corrected.astype(np.float32) / 65535.0
+    
+    # Compute mean color for each image
+    orig_mean = np.mean(orig_float.reshape(-1, 3), axis=0)
+    corr_mean = np.mean(corr_float.reshape(-1, 3), axis=0)
+    
+    # Normalize to unit vectors
+    orig_mean_norm = orig_mean / (np.linalg.norm(orig_mean) + 1e-8)
+    corr_mean_norm = corr_mean / (np.linalg.norm(corr_mean) + 1e-8)
+    
+    # Angular error in degrees
+    cos_sim = np.clip(np.dot(orig_mean_norm, corr_mean_norm), -1.0, 1.0)
+    angular_error = np.arccos(cos_sim) * 180.0 / np.pi
+    
+    return angular_error
+
+
+def compute_ssim_multichannel(img1, img2):
+    """
+    Compute SSIM for each channel and return average.
+    Both images should be uint16.
+    """
+    # Convert to float [0, 1]
+    img1_float = img1.astype(np.float32) / 65535.0
+    img2_float = img2.astype(np.float32) / 65535.0
+    
+    # Compute SSIM per channel
+    ssim_scores = []
+    for c in range(3):
+        score = ssim(img1_float[:, :, c], img2_float[:, :, c], data_range=1.0)
+        ssim_scores.append(score)
+    
+    return np.mean(ssim_scores)
 
 
 def main():
@@ -41,6 +86,7 @@ def main():
     checkpoint = args.checkpoint
     device = args.device
     image_name = args.image
+    compute_metrics = args.compute_metrics
 
     image_dir = Path('data/images')
     sr_map_dir = Path('data/sr_maps')
@@ -54,6 +100,9 @@ def main():
         stems = [image_name]
     else:
         stems = [p.stem for p in image_dir.glob('*.tif')]
+    
+    # Store metrics for all images
+    all_metrics = {}
 
     for stem in stems:
         img_path = image_dir / f"{stem}.tif"
@@ -68,6 +117,9 @@ def main():
             print(f"Failed to load image: {img_path}")
             continue
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # Store metrics for this image
+        image_metrics = {}
 
         if use_model:
             pred_map = estimator.predict(image)
@@ -112,6 +164,16 @@ def main():
             corr8 = (np.clip(corrected / 256.0, 0, 255)).astype(np.uint8)
             corr8_bgr = cv2.cvtColor(corr8, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(out_dir / f"{stem}_sr_retinex_vis.png"), corr8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr_u16)
+                ssim_score = compute_ssim_multichannel(image, corr_u16)
+                image_metrics['sr_retinex'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  SR-Retinex - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
 
         # Optional: run baseline Retinex (no SR constraint) for comparison
         if args.baseline_retinex:
@@ -125,6 +187,16 @@ def main():
             corr_base8 = (np.clip(corrected_base / 256.0, 0, 255)).astype(np.uint8)
             corr_base8_bgr = cv2.cvtColor(corr_base8, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(out_dir / f"{stem}_baseline_retinex_vis.png"), corr_base8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr_base_u16)
+                ssim_score = compute_ssim_multichannel(image, corr_base_u16)
+                image_metrics['baseline_retinex'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  Baseline Retinex - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
 
         # Optional: simple spectral-ratio color correction (shift along SR)
         if args.sr_correct:
@@ -138,6 +210,54 @@ def main():
             corr2_8 = (np.clip(corrected2 / 256.0, 0, 255)).astype(np.uint8)
             corr2_8_bgr = cv2.cvtColor(corr2_8, cv2.COLOR_RGB2BGR)
             cv2.imwrite(str(out_dir / f"{stem}_sr_shifted_vis.png"), corr2_8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr2_u16)
+                ssim_score = compute_ssim_multichannel(image, corr2_u16)
+                image_metrics['sr_color_correction'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  SR Color Correction - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
+        
+        # Store metrics for this image
+        if compute_metrics and image_metrics:
+            all_metrics[stem] = image_metrics
+    
+    # Save all metrics to JSON
+    if compute_metrics and all_metrics:
+        metrics_file = out_dir / 'quality_metrics.json'
+        with open(metrics_file, 'w') as f:
+            json.dump(all_metrics, f, indent=2)
+        print(f"\n✓ Quality metrics saved to: {metrics_file}")
+        
+        # Print summary
+        print("\n" + "="*70)
+        print("QUALITY METRICS SUMMARY")
+        print("="*70)
+        print(f"{'Method':<25} {'Avg Color Error (°)':<20} {'Avg SSIM':<15}")
+        print("-"*70)
+        
+        # Compute averages per method
+        methods = ['sr_retinex', 'baseline_retinex', 'sr_color_correction']
+        method_names = ['SR-Constrained Retinex', 'Baseline Retinex', 'SR Color Correction']
+        
+        for method, name in zip(methods, method_names):
+            color_errors = [m[method]['color_constancy_error_deg'] 
+                           for m in all_metrics.values() if method in m]
+            ssim_scores = [m[method]['ssim'] 
+                          for m in all_metrics.values() if method in m]
+            
+            if color_errors:
+                avg_color = np.mean(color_errors)
+                avg_ssim = np.mean(ssim_scores)
+                print(f"{name:<25} {avg_color:<20.2f} {avg_ssim:<15.4f}")
+        
+        print("="*70)
+        print("\n💡 Lower color error = better color preservation")
+        print("💡 Higher SSIM = better structural similarity to original")
+        print("💡 Your method should show LOWER color error than baseline!\n")
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ Wednesday, Dec 11
 
 CS 7180 
 
-Step-by-step instructions to deploy and run your project on Northeastern's Explorer HPC cluster.
+Step-by-step instructions to deploy and run project on Northeastern's Explorer HPC cluster.
 
 ## Phase 1: Initial Connection & Project Setup
 
