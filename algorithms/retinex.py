@@ -93,14 +93,16 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     sr_unit = normalize_sr_map(sr_map.astype(np.float32))
 
     for _ in range(iterations):
-        I_candidate = _gaussian_blur_per_channel(log_img, sigma)
-        delta = I_candidate - I
-
-        # Project delta onto SR unit vector per-pixel
-        dot = np.einsum('ijk,ijk->ij', delta, sr_unit)
+        # Key difference from baseline: compute residual then project
+        residual = log_img - I
+        residual_blurred = _gaussian_blur_per_channel(residual, sigma)
+        
+        # Project the blurred residual onto SR direction
+        dot = np.einsum('ijk,ijk->ij', residual_blurred, sr_unit)
         dot = dot[:, :, np.newaxis]
         delta_proj = dot * sr_unit
-
+        
+        # Update illumination
         I = I + delta_proj
 
     # Reflectance estimate
