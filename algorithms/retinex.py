@@ -94,22 +94,19 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
 
     for _ in range(iterations):
         # Standard Retinex update (unconstrained)
-        I_update = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
+        I_unconstrained = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
         
-        # Decompose I_update into parallel and perpendicular components to SR
-        # parallel component: (I_update · sr_unit) * sr_unit
-        # perpendicular component: I_update - parallel
-        dot = np.einsum('ijk,ijk->ij', I_update, sr_unit)
+        # SR-constrained version: project onto SR direction
+        dot = np.einsum('ijk,ijk->ij', I_unconstrained, sr_unit)
         dot = dot[:, :, np.newaxis]
-        I_parallel = dot * sr_unit
-        I_perpendicular = I_update - I_parallel
+        I_constrained = dot * sr_unit
         
-        # SR constraint: suppress perpendicular variations (color shifts)
-        # Keep parallel component (brightness changes) + damped perpendicular
-        constraint_strength = 0.1  # Allow 10% of perpendicular component
-        I = I_parallel + constraint_strength * I_perpendicular
+        # Blend: mostly use unconstrained, slightly pull toward SR direction
+        # This should preserve Retinex's spatial adaptation while reducing color shifts
+        alpha = 0.95  # 95% unconstrained, 5% SR-constrained (gentle regularization)
+        I = alpha * I_unconstrained + (1 - alpha) * I_constrained
 
-    # Reflectance estimate
+    # Reflectance estimate  
     R = log_img - I
 
     if anchor is None:
