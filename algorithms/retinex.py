@@ -38,7 +38,8 @@ def baseline_retinex(image, iterations=5, sigma=15, anchor=None):
     R = log_img - I
     
     if anchor is None:
-        anchor = float(np.percentile(I, 95))
+        # Use mean instead of 95th percentile to avoid over-darkening
+        anchor = float(np.mean(I))
     
     corrected_log = R + anchor
     corrected_linear = np.exp(corrected_log).astype(np.float32)
@@ -111,7 +112,8 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     R_corrected = alpha * R + (1 - alpha) * R_sr_component
 
     if anchor is None:
-        anchor = float(np.percentile(I, 95))
+        # Use mean instead of 95th percentile to avoid over-darkening
+        anchor = float(np.mean(I))
 
     corrected_log = R_corrected + anchor
     corrected_linear = np.exp(corrected_log).astype(np.float32)
