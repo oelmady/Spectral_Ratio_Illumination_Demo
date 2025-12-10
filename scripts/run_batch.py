@@ -133,6 +133,11 @@ def main():
             corr2_out = out_dir / f"{stem}_sr_shifted.tiff"
             cv2.imwrite(str(corr2_out), corr2_u16)
             print(f"Saved SR-shifted image: {corr2_out}")
+            
+            # Save 8-bit visualization
+            corr2_8 = (np.clip(corrected2 / 256.0, 0, 255)).astype(np.uint8)
+            corr2_8_bgr = cv2.cvtColor(corr2_8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_sr_shifted_vis.png"), corr2_8_bgr)
 
 
 if __name__ == '__main__':
