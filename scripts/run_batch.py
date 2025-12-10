@@ -101,6 +101,11 @@ def main():
     else:
         stems = [p.stem for p in image_dir.glob('*.tif')]
     
+    # Only keep last 10 images to save time/storage
+    if len(stems) > 10:
+        print(f"⚠️ Found {len(stems)} images. Processing only the last 10 to save time.")
+        stems = stems[-10:]
+    
     # Store metrics for all images
     all_metrics = {}
 
