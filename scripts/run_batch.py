@@ -19,7 +19,14 @@ from skimage.metrics import structural_similarity as ssim
 
 from model.unet_models2 import ResNet50UNet
 from run import ISDMapEstimator
-from algorithms.retinex import spectral_ratio_retinex, apply_spectral_ratio_color_correction, baseline_retinex
+from algorithms.retinex import (
+    spectral_ratio_retinex, 
+    apply_spectral_ratio_color_correction, 
+    baseline_retinex,
+    gray_world_correction,
+    white_patch_correction,
+    multiscale_retinex
+)
 
 
 def parse_args():
@@ -31,6 +38,9 @@ def parse_args():
     parser.add_argument('--retinex', action='store_true', help='Run spectral-ratio constrained Retinex and save corrected image')
     parser.add_argument('--baseline-retinex', action='store_true', help='Run baseline Retinex (no SR constraint) for comparison')
     parser.add_argument('--sr-correct', action='store_true', help='Apply spectral-ratio color correction (simple shift)')
+    parser.add_argument('--gray-world', action='store_true', help='Run Gray World color constancy algorithm')
+    parser.add_argument('--white-patch', action='store_true', help='Run White Patch (Max RGB) algorithm')
+    parser.add_argument('--multiscale-retinex', action='store_true', help='Run Multi-Scale Retinex (MSR)')
     parser.add_argument('--distance', type=float, default=1.0, help='Distance in log-space for sr-correct')
     parser.add_argument('--iterations', type=int, default=5, help='Number of Retinex iterations')
     parser.add_argument('--sigma', type=float, default=15.0, help='Gaussian blur sigma for Retinex')
@@ -225,6 +235,75 @@ def main():
                     'ssim': float(ssim_score)
                 }
                 print(f"  SR Color Correction - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
+        
+        # Optional: Gray World correction
+        if args.gray_world:
+            corrected_gw = gray_world_correction(image)
+            corr_gw_u16 = np.clip(corrected_gw, 0, 65535).astype(np.uint16)
+            corr_gw_out = out_dir / f"{stem}_gray_world.tiff"
+            cv2.imwrite(str(corr_gw_out), corr_gw_u16)
+            print(f"Saved Gray World: {corr_gw_out}")
+            
+            # Save 8-bit visualization
+            corr_gw8 = (np.clip(corrected_gw / 256.0, 0, 255)).astype(np.uint8)
+            corr_gw8_bgr = cv2.cvtColor(corr_gw8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_gray_world_vis.png"), corr_gw8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr_gw_u16)
+                ssim_score = compute_ssim_multichannel(image, corr_gw_u16)
+                image_metrics['gray_world'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  Gray World - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
+        
+        # Optional: White Patch correction
+        if args.white_patch:
+            corrected_wp = white_patch_correction(image)
+            corr_wp_u16 = np.clip(corrected_wp, 0, 65535).astype(np.uint16)
+            corr_wp_out = out_dir / f"{stem}_white_patch.tiff"
+            cv2.imwrite(str(corr_wp_out), corr_wp_u16)
+            print(f"Saved White Patch: {corr_wp_out}")
+            
+            # Save 8-bit visualization
+            corr_wp8 = (np.clip(corrected_wp / 256.0, 0, 255)).astype(np.uint8)
+            corr_wp8_bgr = cv2.cvtColor(corr_wp8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_white_patch_vis.png"), corr_wp8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr_wp_u16)
+                ssim_score = compute_ssim_multichannel(image, corr_wp_u16)
+                image_metrics['white_patch'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  White Patch - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
+        
+        # Optional: Multi-Scale Retinex
+        if args.multiscale_retinex:
+            corrected_msr, illum_msr = multiscale_retinex(image)
+            corr_msr_u16 = np.clip(corrected_msr, 0, 65535).astype(np.uint16)
+            corr_msr_out = out_dir / f"{stem}_multiscale_retinex.tiff"
+            cv2.imwrite(str(corr_msr_out), corr_msr_u16)
+            print(f"Saved Multi-Scale Retinex: {corr_msr_out}")
+            
+            # Save 8-bit visualization
+            corr_msr8 = (np.clip(corrected_msr / 256.0, 0, 255)).astype(np.uint8)
+            corr_msr8_bgr = cv2.cvtColor(corr_msr8, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(out_dir / f"{stem}_multiscale_retinex_vis.png"), corr_msr8_bgr)
+            
+            # Compute metrics
+            if compute_metrics:
+                color_error = compute_color_constancy_error(image, corr_msr_u16)
+                ssim_score = compute_ssim_multichannel(image, corr_msr_u16)
+                image_metrics['multiscale_retinex'] = {
+                    'color_constancy_error_deg': float(color_error),
+                    'ssim': float(ssim_score)
+                }
+                print(f"  Multi-Scale Retinex - Color error: {color_error:.2f}°, SSIM: {ssim_score:.4f}")
         
         # Store metrics for this image
         if compute_metrics and image_metrics:

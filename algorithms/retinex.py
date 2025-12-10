@@ -93,14 +93,21 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     sr_unit = normalize_sr_map(sr_map.astype(np.float32))
 
     for _ in range(iterations):
-        # Standard Retinex update
+        # Standard Retinex update (unconstrained)
         I_update = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
         
-        # Project the illumination estimate onto SR direction
-        # This enforces that illumination only varies along SR direction
+        # Decompose I_update into parallel and perpendicular components to SR
+        # parallel component: (I_update · sr_unit) * sr_unit
+        # perpendicular component: I_update - parallel
         dot = np.einsum('ijk,ijk->ij', I_update, sr_unit)
         dot = dot[:, :, np.newaxis]
-        I = dot * sr_unit
+        I_parallel = dot * sr_unit
+        I_perpendicular = I_update - I_parallel
+        
+        # SR constraint: suppress perpendicular variations (color shifts)
+        # Keep parallel component (brightness changes) + damped perpendicular
+        constraint_strength = 0.1  # Allow 10% of perpendicular component
+        I = I_parallel + constraint_strength * I_perpendicular
 
     # Reflectance estimate
     R = log_img - I
@@ -142,3 +149,104 @@ def apply_spectral_ratio_color_correction(image, sr_map, distance=1.0, mask=None
 
     corrected_linear = np.exp(shifted).astype(np.float32)
     return corrected_linear
+
+
+def gray_world_correction(image):
+    """
+    Gray World color constancy algorithm.
+    Assumes the average color in the scene should be gray.
+    
+    Parameters:
+    - image: uint16 RGB image (H,W,3)
+    
+    Returns:
+    - corrected_linear: float32 linear RGB image
+    """
+    img_float = image.astype(np.float32)
+    
+    # Compute mean of each channel
+    mean_r = np.mean(img_float[:, :, 0])
+    mean_g = np.mean(img_float[:, :, 1])
+    mean_b = np.mean(img_float[:, :, 2])
+    
+    # Gray value (average of channel means)
+    gray = (mean_r + mean_g + mean_b) / 3.0
+    
+    # Scale each channel
+    corrected = np.zeros_like(img_float)
+    corrected[:, :, 0] = img_float[:, :, 0] * (gray / mean_r) if mean_r > 0 else img_float[:, :, 0]
+    corrected[:, :, 1] = img_float[:, :, 1] * (gray / mean_g) if mean_g > 0 else img_float[:, :, 1]
+    corrected[:, :, 2] = img_float[:, :, 2] * (gray / mean_b) if mean_b > 0 else img_float[:, :, 2]
+    
+    return corrected.astype(np.float32)
+
+
+def white_patch_correction(image, percentile=99):
+    """
+    White Patch (Max RGB) color constancy algorithm.
+    Assumes the brightest pixel in the scene should be white.
+    
+    Parameters:
+    - image: uint16 RGB image (H,W,3)
+    - percentile: which percentile to use as "white" (default 99 to avoid outliers)
+    
+    Returns:
+    - corrected_linear: float32 linear RGB image
+    """
+    img_float = image.astype(np.float32)
+    
+    # Find the brightest value in each channel (using percentile to avoid outliers)
+    max_r = np.percentile(img_float[:, :, 0], percentile)
+    max_g = np.percentile(img_float[:, :, 1], percentile)
+    max_b = np.percentile(img_float[:, :, 2], percentile)
+    
+    # Normalize by the brightest channel
+    max_overall = max(max_r, max_g, max_b)
+    
+    # Scale each channel
+    corrected = np.zeros_like(img_float)
+    corrected[:, :, 0] = img_float[:, :, 0] * (max_overall / max_r) if max_r > 0 else img_float[:, :, 0]
+    corrected[:, :, 1] = img_float[:, :, 1] * (max_overall / max_g) if max_g > 0 else img_float[:, :, 1]
+    corrected[:, :, 2] = img_float[:, :, 2] * (max_overall / max_b) if max_b > 0 else img_float[:, :, 2]
+    
+    return corrected.astype(np.float32)
+
+
+def multiscale_retinex(image, sigmas=[15, 80, 250], anchor=None):
+    """
+    Multi-Scale Retinex (MSR) algorithm.
+    Combines Retinex at multiple scales for better dynamic range compression.
+    
+    Parameters:
+    - image: uint16 RGB image (H,W,3)
+    - sigmas: list of Gaussian blur sigma values for different scales
+    - anchor: optional scalar log-illumination anchor
+    
+    Returns:
+    - corrected_linear: float32 linear RGB image
+    - illumination: final multi-scale illumination estimate in log-space
+    """
+    # Convert to float32 log-space
+    log_img = np.zeros_like(image, dtype=np.float32)
+    mask = image > 0
+    log_img[mask] = np.log(image[mask])
+    
+    # Compute multi-scale illumination estimate
+    I_multi = np.zeros_like(log_img)
+    for sigma in sigmas:
+        I_scale = _gaussian_blur_per_channel(log_img, sigma)
+        I_multi += I_scale
+    
+    # Average across scales
+    I_multi /= len(sigmas)
+    
+    # Reflectance estimate
+    R = log_img - I_multi
+    
+    if anchor is None:
+        anchor = float(np.percentile(I_multi, 95))
+    
+    corrected_log = R + anchor
+    corrected_linear = np.exp(corrected_log).astype(np.float32)
+    
+    return corrected_linear, I_multi
