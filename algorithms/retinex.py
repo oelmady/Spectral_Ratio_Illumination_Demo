@@ -92,27 +92,28 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
 
     sr_unit = normalize_sr_map(sr_map.astype(np.float32))
 
+    # Standard Retinex iterations (unconstrained)
     for _ in range(iterations):
-        # Standard Retinex update (unconstrained)
-        I_unconstrained = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
-        
-        # SR-constrained version: project onto SR direction
-        dot = np.einsum('ijk,ijk->ij', I_unconstrained, sr_unit)
-        dot = dot[:, :, np.newaxis]
-        I_constrained = dot * sr_unit
-        
-        # Blend: mostly use unconstrained, slightly pull toward SR direction
-        # This should preserve Retinex's spatial adaptation while reducing color shifts
-        alpha = 0.95  # 95% unconstrained, 5% SR-constrained (gentle regularization)
-        I = alpha * I_unconstrained + (1 - alpha) * I_constrained
+        I = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
 
-    # Reflectance estimate  
+    # Reflectance estimate (standard Retinex)
     R = log_img - I
+    
+    # SR constraint: Keep reflectance chromaticity, but shift magnitude along SR
+    # This preserves material color while adjusting brightness via SR direction
+    # Project R onto SR to get how much to shift along SR
+    dot = np.einsum('ijk,ijk->ij', R, sr_unit)
+    dot = dot[:, :, np.newaxis]
+    R_sr_component = dot * sr_unit
+    
+    # Blend between original reflectance and SR-aligned version
+    alpha = 0.8  # Keep 80% of original reflectance chromaticity
+    R_corrected = alpha * R + (1 - alpha) * R_sr_component
 
     if anchor is None:
         anchor = float(np.percentile(I, 95))
 
-    corrected_log = R + anchor
+    corrected_log = R_corrected + anchor
     corrected_linear = np.exp(corrected_log).astype(np.float32)
 
     return corrected_linear, I
