@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Pre-flight check script to validate all components are ready for experiments.
 Run this after activating your environment to ensure everything works.
@@ -22,17 +23,17 @@ def check_imports():
         try:
             mod = importlib.import_module(pkg)
             version = getattr(mod, '__version__', 'unknown')
-            print(f"✓ {pkg:15s} {version}")
+            print(f"OK {pkg:15s} {version}")
         except ImportError as e:
-            print(f"✗ {pkg:15s} FAILED: {e}")
+            print(f"X {pkg:15s} FAILED: {e}")
             failed.append(pkg)
     
     if failed:
-        print(f"\n❌ Missing packages: {', '.join(failed)}")
+        print(f"\nX Missing packages: {', '.join(failed)}")
         print("Activate your environment: conda activate isd_fixed")
         return False
     
-    print("\n✓ All imports successful!")
+    print("\nOK All imports successful!")
     return True
 
 def check_project_structure():
@@ -67,24 +68,24 @@ def check_project_structure():
     for fpath in required_files:
         p = Path(fpath)
         if p.exists():
-            print(f"✓ {fpath}")
+            print(f"OK {fpath}")
         else:
-            print(f"✗ {fpath} MISSING")
+            print(f"X {fpath} MISSING")
             failed_files.append(fpath)
     
     for dpath in required_dirs:
         p = Path(dpath)
         if p.exists() and p.is_dir():
-            print(f"✓ {dpath}/")
+            print(f"OK {dpath}/")
         else:
-            print(f"✗ {dpath}/ MISSING")
+            print(f"X {dpath}/ MISSING")
             failed_dirs.append(dpath)
     
     if failed_files or failed_dirs:
-        print(f"\n❌ Missing components")
+        print(f"\nX Missing components")
         return False
     
-    print("\n✓ All files present!")
+    print("\nOK All files present!")
     return True
 
 def check_algorithms():
@@ -100,10 +101,10 @@ def check_algorithms():
             apply_spectral_ratio_color_correction,
             normalize_sr_map
         )
-        print("✓ baseline_retinex imported")
-        print("✓ spectral_ratio_retinex imported")
-        print("✓ apply_spectral_ratio_color_correction imported")
-        print("✓ normalize_sr_map imported")
+        print("OK baseline_retinex imported")
+        print("OK spectral_ratio_retinex imported")
+        print("OK apply_spectral_ratio_color_correction imported")
+        print("OK normalize_sr_map imported")
         
         # Check function signatures
         import inspect
@@ -122,7 +123,7 @@ def check_algorithms():
         return True
         
     except Exception as e:
-        print(f"✗ Algorithm check failed: {e}")
+        print(f"X Algorithm check failed: {e}")
         return False
 
 def check_model_files():
@@ -136,7 +137,7 @@ def check_model_files():
     checkpoint = Path('model/UNET_run_x10_01_last_model.pth')
     
     if not checkpoint.exists():
-        print(f"✗ Model checkpoint not found: {checkpoint}")
+        print(f"X Model checkpoint not found: {checkpoint}")
         print("\n⚠️  You need to download the model weights (528MB)")
         print("   Options:")
         print("   1. brew install git-lfs && git lfs pull")
@@ -146,15 +147,15 @@ def check_model_files():
     size_mb = checkpoint.stat().st_size / (1024 * 1024)
     
     if size_mb < 100:
-        print(f"✗ Model checkpoint is only {size_mb:.1f}MB (expected ~503MB)")
+        print(f"X Model checkpoint is only {size_mb:.1f}MB (expected ~503MB)")
         print("   This is likely a Git LFS pointer, not the actual weights")
         print("\n⚠️  Download the actual model:")
         print("   brew install git-lfs && git lfs pull")
         return False
     
-    print(f"✓ Model checkpoint found: {checkpoint}")
-    print(f"✓ Size: {size_mb:.1f}MB")
-    print("\n✓ Model ready!")
+    print(f"OK Model checkpoint found: {checkpoint}")
+    print(f"OK Size: {size_mb:.1f}MB")
+    print("\nOK Model ready!")
     return True
 
 def check_data():
