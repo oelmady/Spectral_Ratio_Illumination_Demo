@@ -38,10 +38,13 @@ def baseline_retinex(image, iterations=5, sigma=15, anchor=None):
     R = log_img - I
     
     if anchor is None:
-        # Use mean instead of 95th percentile to avoid over-darkening
-        anchor = float(np.mean(I))
+        # Use 90th percentile for brightness preservation
+        # This keeps highlights bright while revealing shadow detail
+        anchor = float(np.percentile(I, 90))
     
-    corrected_log = R + anchor
+    # Scale reflectance to preserve brightness and color
+    # Add offset to avoid overly dark outputs
+    corrected_log = R + anchor + 0.3  # +0.3 brightens output ~35%
     corrected_linear = np.exp(corrected_log).astype(np.float32)
     
     return corrected_linear, I
@@ -112,10 +115,11 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     R_corrected = alpha * R + (1 - alpha) * R_sr_component
 
     if anchor is None:
-        # Use mean instead of 95th percentile to avoid over-darkening
-        anchor = float(np.mean(I))
+        # Use 90th percentile for brightness preservation
+        anchor = float(np.percentile(I, 90))
 
-    corrected_log = R_corrected + anchor
+    # Add brightness offset to avoid overly dark outputs
+    corrected_log = R_corrected + anchor + 0.3  # +0.3 brightens output ~35%
     corrected_linear = np.exp(corrected_log).astype(np.float32)
 
     return corrected_linear, I
