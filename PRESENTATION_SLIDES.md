@@ -99,10 +99,10 @@ When you brighten a shadow, what should happen to colors?
 - SR describes color relationships
 - These are fundamentally different problems
 
-**Brightness Calibration:** Retinex required tuning
-- Anchor point (90th percentile) + offset (+0.3 log units)
-- Preserves highlights while brightening shadows
-- Balances reflectance estimation with visibility
+**Brightness Calibration:** Retinex required careful tuning
+- Median anchor + minimal offset (+0.1 log units)
+- Balances shadow removal with color preservation
+- Avoids over-correction that creates unnatural colors
 
 **Lesson:** Not all combinations of good methods produce better results
 
