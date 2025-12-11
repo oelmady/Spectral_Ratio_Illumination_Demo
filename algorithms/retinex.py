@@ -7,10 +7,10 @@ import numpy as np
 
 def baseline_retinex(image, iterations=5, sigma=15, anchor=None):
     """
-    Standard recursive Retinex algorithm (McCann-Sobel style).
+    Retinex-based illumination correction.
     
-    This is the baseline that preserves chromaticity - used for comparison
-    against the SR-constrained version.
+    Estimates illumination and removes it to brighten shadows while
+    preserving colors and details.
     
     Parameters:
     - image: uint16 RGB image (H,W,3)
@@ -30,21 +30,24 @@ def baseline_retinex(image, iterations=5, sigma=15, anchor=None):
     # Initialize illumination with Gaussian blur
     I = _gaussian_blur_per_channel(log_img, sigma)
     
-    # Iteratively refine illumination (standard Retinex - no SR constraint)
+    # Iteratively refine illumination (standard Retinex)
     for _ in range(iterations):
         I = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
     
-    # Reflectance estimate
-    R = log_img - I
+    # For illumination correction: normalize the image by the estimated illumination
+    # This brightens dark regions (low I) and preserves bright regions (high I)
+    # Use max illumination as reference to preserve brightness
+    I_max = np.max(I)
     
-    if anchor is None:
-        # Use median (50th percentile) for balanced reconstruction
-        # Preserves natural brightness without over-correction
-        anchor = float(np.median(I))
-    
-    # Reconstruct with minimal offset to maintain natural appearance
-    corrected_log = R + anchor + 0.1  # Small offset prevents excessive darkening
+    # Correct by removing illumination variation
+    corrected_log = log_img - I + I_max
     corrected_linear = np.exp(corrected_log).astype(np.float32)
+    
+    # Normalize to preserve overall brightness
+    input_mean = np.mean(image)
+    output_mean = np.mean(corrected_linear)
+    if output_mean > 0:
+        corrected_linear = corrected_linear * (input_mean / output_mean)
     
     return corrected_linear, I
 
@@ -69,10 +72,9 @@ def normalize_sr_map(sr_map):
 
 def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     """
-    Lightweight spectral-ratio constrained Retinex-like routine.
+    Retinex illumination correction with spectral ratio guidance.
 
-    This implements a simple iterative illumination estimation where each
-    illumination update is projected onto the per-pixel spectral-ratio direction.
+    Applies gentle SR color guidance to illumination-corrected output.
 
     Parameters:
     - image: uint16 RGB image (H,W,3)
@@ -95,31 +97,30 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
 
     sr_unit = normalize_sr_map(sr_map.astype(np.float32))
 
-    # Standard Retinex iterations (unconstrained)
+    # Standard Retinex iterations
     for _ in range(iterations):
         I = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
 
-    # Reflectance estimate (standard Retinex)
-    R = log_img - I
+    # Illumination correction approach
+    I_max = np.max(I)
+    corrected_log = log_img - I + I_max
     
-    # SR constraint: Keep reflectance chromaticity, but shift magnitude along SR
-    # This preserves material color while adjusting brightness via SR direction
-    # Project R onto SR to get how much to shift along SR
-    dot = np.einsum('ijk,ijk->ij', R, sr_unit)
+    # Apply gentle SR color guidance
+    # Shift slightly along SR direction for physics-based color
+    dot = np.einsum('ijk,ijk->ij', corrected_log, sr_unit)
     dot = dot[:, :, np.newaxis]
-    R_sr_component = dot * sr_unit
+    sr_shift = dot * sr_unit * 0.15  # Subtle SR guidance (15%)
     
-    # Blend between original reflectance and SR-aligned version
-    alpha = 0.8  # Keep 80% of original reflectance chromaticity
-    R_corrected = alpha * R + (1 - alpha) * R_sr_component
-
-    if anchor is None:
-        # Use median for balanced reconstruction
-        anchor = float(np.median(I))
-
-    # Reconstruct with minimal offset
-    corrected_log = R_corrected + anchor + 0.1  # Small offset prevents excessive darkening
-    corrected_linear = np.exp(corrected_log).astype(np.float32)
+    # Blend: 85% corrected, 15% SR-guided
+    corrected_log_final = corrected_log + sr_shift * 0.2
+    
+    corrected_linear = np.exp(corrected_log_final).astype(np.float32)
+    
+    # Normalize to preserve overall brightness
+    input_mean = np.mean(image[image > 0])
+    output_mean = np.mean(corrected_linear[corrected_linear > 0])
+    if output_mean > 0:
+        corrected_linear = corrected_linear * (input_mean / output_mean)
 
     return corrected_linear, I
 
