@@ -74,7 +74,7 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     """
     Retinex illumination correction with spectral ratio guidance.
 
-    Applies gentle SR color guidance to illumination-corrected output.
+    Applies gentle illumination compensation with SR color guidance.
 
     Parameters:
     - image: uint16 RGB image (H,W,3)
@@ -101,23 +101,23 @@ def spectral_ratio_retinex(image, sr_map, iterations=5, sigma=15, anchor=None):
     for _ in range(iterations):
         I = _gaussian_blur_per_channel(log_img - (_gaussian_blur_per_channel(log_img, sigma) - I), sigma)
 
-    # Illumination correction approach
-    I_max = np.max(I)
-    corrected_log = log_img - I + I_max
+    # Gentle illumination compensation
+    I_mean = np.mean(I)
+    I_normalized = I_mean + 0.5 * (I - I_mean)  # 50% strength
     
-    # Apply gentle SR color guidance
-    # Shift slightly along SR direction for physics-based color
+    # Apply compensation
+    corrected_log = log_img - (I - I_normalized)
+    
+    # Apply gentle SR color guidance (10% strength)
     dot = np.einsum('ijk,ijk->ij', corrected_log, sr_unit)
     dot = dot[:, :, np.newaxis]
-    sr_shift = dot * sr_unit * 0.15  # Subtle SR guidance (15%)
+    sr_shift = dot * sr_unit * 0.1  # Subtle SR guidance
     
-    # Blend: 85% corrected, 15% SR-guided
-    corrected_log_final = corrected_log + sr_shift * 0.2
-    
+    corrected_log_final = corrected_log + sr_shift
     corrected_linear = np.exp(corrected_log_final).astype(np.float32)
     
     # Normalize to preserve overall brightness
-    input_mean = np.mean(image[image > 0])
+    input_mean = np.mean(image[mask])
     output_mean = np.mean(corrected_linear[corrected_linear > 0])
     if output_mean > 0:
         corrected_linear = corrected_linear * (input_mean / output_mean)
