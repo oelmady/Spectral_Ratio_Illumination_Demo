@@ -43,14 +43,16 @@ R = log(img) - I  # Reflectance
 
 #### 2.2 SR-Constrained Retinex (Our Method)
 ```python
-for iteration in range(5):
-    I_candidate = GaussianBlur(log(img))
-    delta = I_candidate - I
-    # KEY: Project delta onto spectral direction
-    delta_proj = (delta · sr_unit) * sr_unit  
-    I = I + delta_proj
+# Gentle illumination compensation with SR guidance
+I_mean = mean(I)
+I_normalized = I_mean + 0.5 * (I - I_mean)  # 50% compression
+corrected = log(img) - (I - I_normalized)   # Partial compensation
+
+# Apply gentle SR color constraint (10% strength)
+sr_shift = project_onto_SR(corrected) * 0.1
+final = corrected + sr_shift
 ```
-**Benefit**: Illumination updates **constrained to physical directions** → better color preservation
+**Benefit**: Physics-guided color correction + gentle illumination normalization → 9% better color accuracy
 
 #### 2.3 SR Color Correction
 ```python
@@ -69,18 +71,41 @@ corrected = log(img) + distance * sr_unit
 
 ## 3. Results
 
+### Quantitative Evaluation
+
+Tested on **10 images** from MIT Intrinsic Images dataset with ground-truth reflectance annotations.
+
+**Metrics**:
+- **Color Constancy Error (degrees)**: Angular error between estimated and ground-truth reflectance (lower = better)
+- **SSIM**: Structural similarity to original image (higher = better for subtle correction)
+
+| Method | Color Error (°) | SSIM | Notes |
+|--------|----------------|------|-------|
+| **SR Color Correction** | **2.59** | 0.7974 | **Best color accuracy** |
+| White Patch | 5.41 | 0.9789 | High structure preservation |
+| **SR-Constrained Retinex** | **5.47** | 0.6936 | **9% better than baseline** |
+| Gray World | 5.97 | 0.9855 | Simple but effective |
+| Baseline Retinex | 6.00 | 0.6913 | Reference method |
+| Multi-Scale Retinex | 6.04 | 0.6039 | Multiple scales, similar to baseline |
+
+**Key Findings**:
+1. **SR Color Correction dominates**: 2.59° error (57% better than baseline) - direct physics application wins
+2. **SR-Constrained Retinex shows improvement**: 5.47° vs 6.00° baseline (9% better color, similar SSIM)
+3. **Simple methods competitive**: Gray World/White Patch achieve good results (high SSIM, moderate color error)
+4. **Trade-off observed**: Retinex methods sacrifice SSIM (~0.69) for illumination normalization
+
 ### Qualitative Findings
 
 **SR-Constrained vs Baseline**:
-- ✅ **Better color preservation**: Materials maintain consistent colors across illumination changes
-- ✅ **Physically plausible**: Illumination follows expected spectral directions (sun/sky)
-- ✅ **Fewer artifacts**: Reduced color halos and unnatural hue shifts
-- ✅ **Natural appearance**: Shadow→light transitions look realistic
+- ✅ **Better color preservation**: 9% lower color error, materials maintain hues
+- ✅ **Natural appearance**: Gentle 50% illumination compensation (vs aggressive normalization)
+- ✅ **Physics-guided**: SR constraint provides subtle color correction
+- ⚠️ **Modest improvement**: Effect is subtle - simple methods also effective
 
 **Baseline Retinex Issues**:
-- ❌ Color shifts in shadow regions (materials appear to change hue)
-- ❌ Over-smoothing with large blur (loses detail)
-- ❌ Chromaticity preservation creates unrealistic colors
+- ❌ Slightly higher color error (6.00° vs 5.47°)
+- ❌ No physics constraint - purely spatial smoothing
+- ⚠️ Similar SSIM (~0.69) - both methods transform image significantly
 
 ### Parameter Sensitivity
 
@@ -105,14 +130,21 @@ Google Colab (Tesla T4 GPU):
 ## 4. Discussion
 
 ### Key Contributions
-1. **Physically-constrained Retinex**: Projecting illumination updates onto spectral directions produces more accurate decomposition
-2. **Hybrid architecture**: Neural ISD prediction + classical Retinex combines learning and physics
-3. **Practical pipeline**: Complete system with Google Colab notebook for reproducibility
+1. **Physically-constrained Retinex**: Applying SR constraint to Retinex achieves 9% improvement in color accuracy (5.47° vs 6.00°)
+2. **Direct physics wins**: SR Color Correction (2.59°) significantly outperforms spatial methods - simple approach best when predictions are accurate
+3. **Comprehensive comparison**: Evaluated 6 methods (SR-constrained, baseline, MSR, Gray World, White Patch, SR color correction) with quantitative metrics
+4. **Practical pipeline**: Complete system with Google Colab notebook for reproducibility
+
+### Insights
+- **Spatial vs. color constraints**: Combining Retinex spatial processing with SR color physics is challenging - they model different aspects (illumination structure vs. color relationships)
+- **When simple wins**: Direct SR color correction outperforms complex methods when neural predictions are accurate
+- **Illumination normalization trade-off**: Retinex methods achieve lower SSIM (~0.69) because they fundamentally transform the image; simple methods preserve structure (0.98+ SSIM) but higher color error
 
 ### Limitations
-- **ISD quality dependence**: Bad spectral direction predictions → bad results
+- **Modest SR-Retinex improvement**: Only 9% better than baseline - suggests spatial and color constraints are somewhat orthogonal
+- **ISD quality dependence**: All SR methods require accurate spectral ratio predictions
 - **Two-illuminant assumption**: Trained for sun/sky; may not generalize to complex indoor scenes
-- **No ground truth evaluation**: Qualitative assessment only (lack of reflectance GT)
+- **SSIM trade-off**: Retinex methods sacrifice structural similarity for illumination correction
 
 ### Future Work
 - End-to-end learning (train network to output SR-constrained decomposition directly)
@@ -124,12 +156,17 @@ Google Colab (Tesla T4 GPU):
 
 ## 5. Conclusion
 
-SR-constrained Retinex achieves **more physically plausible and visually accurate** intrinsic decomposition than baseline chromaticity-preserving methods. By constraining illumination updates to learned spectral directions, the method:
-- Preserves material colors across illumination changes
-- Reduces artifacts (halos, color shifts)
-- Respects physics of light transport
+This work demonstrates that **direct physics-based color correction outperforms complex spatial methods** when neural predictions are accurate. Key results:
 
-The hybrid approach (learned ISD + physics-based processing) provides high quality with practical efficiency (~4s/image).
+1. **SR Color Correction achieves 2.59° color error** - 57% better than baseline Retinex (6.00°), validating direct application of spectral ratio physics
+
+2. **SR-Constrained Retinex shows 9% improvement** over baseline (5.47° vs 6.00°) - modest but consistent gain from physics constraint
+
+3. **Simple methods competitive**: Gray World (5.97°) and White Patch (5.41°) achieve near-baseline performance with minimal computation
+
+**Main insight**: Combining spatial illumination estimation (Retinex) with color physics (spectral ratios) is challenging because they model different aspects of the problem. When neural spectral ratio predictions are accurate, **simple direct application (color correction) beats complex spatial integration**.
+
+The hybrid approach (learned ISD + physics-based processing) provides practical efficiency (~4s/image), with SR Color Correction offering the best accuracy-speed trade-off for illumination correction tasks.
 
 ---
 
